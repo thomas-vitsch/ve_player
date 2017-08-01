@@ -10,6 +10,19 @@
 
 #define CEDRUS_DRM_DEVICE_PATH "/dev/video0"
 
+//Taken from modules/hw/vaapi/vlc_vaapi.c
+#define VA_CALL(f, args...)				\
+    do                                                  \
+    {                                                   \
+        VAStatus s = f(args);                           \
+        if (s != VA_STATUS_SUCCESS)                     \
+        {                                               \
+            printf("%s: %s", #f, vaErrorStr(s));    	\
+            goto error;                                 \
+        }                                               \
+    } while (0)
+
+
 void printVaProfile(VAProfile p) {
   switch (p) {
 	case VAProfileNone:
@@ -124,6 +137,32 @@ void printEntrypoint(VAEntrypoint p) {
     }
 }
 
+void printVaImgFmt(VAImageFormat fmt) {
+  switch (fmt.fourcc) {
+  case VA_FOURCC_NV12:
+    printf("\tVAImageFormat VA_FOURCC_NV12\n");
+    break;
+  default:
+    printf("\tUknown ImageFormat: see /usr/bin/include/va/va.h\n");
+    break;
+  }
+    printf("\t\tbyte_order %d, \n 		\
+      \t\tbits_per_pixel %d \n 			\
+      \t--rest only valid for rgb formats \n 	\
+      \t\tdepth %x \n				\
+      \t\tred_mask %x \n			\
+      \t\tgreen_mask %x \n			\
+      \t\tblue_mask %x \n			\
+      \t\talpha_mask %x \n",
+      fmt.byte_order,
+      fmt.bits_per_pixel,
+      fmt.depth,
+      fmt.red_mask,
+      fmt.green_mask,
+      fmt.blue_mask,
+      fmt.alpha_mask);
+
+}
 
 int main(int argc, char **argv) {
   VADisplay dpy;
@@ -159,11 +198,7 @@ int main(int argc, char **argv) {
   }
 
   printf("If err == va_getDriverName() returns -1\n\t run as video user, not root\n");
-  va_status = vaInitialize(dpy, &major_version, &minor_version);
-  if (VA_STATUS_SUCCESS != va_status) {
-    printf("vaInitialize failed\n");
-    return -3;
-  }
+  VA_CALL(vaInitialize, dpy, &major_version, &minor_version);
 
   va_max_num_profiles = vaMaxNumProfiles(dpy);
 //  printf("nr profiles = %d. Must be < 0\n", va_max_num_profiles);    
@@ -175,18 +210,13 @@ int main(int argc, char **argv) {
   }
 
   // Get supported profiles
-  va_status = vaQueryConfigProfiles(dpy, va_profiles, &va_max_num_profiles);
-  if (va_status != VA_STATUS_SUCCESS) {
-    printf("vaQueryConfigProfiles failed \n");  
-    return -5;
-  }  
+  VA_CALL(vaQueryConfigProfiles, dpy, va_profiles, &va_max_num_profiles);
 
   for (i = 0; i < va_max_num_profiles; i++) {
     printVaProfile(va_profiles[i]);
     
     // Get supported entrypoints
     va_entrypoints_num = vaMaxNumEntrypoints(dpy);
-//    printf("\tnr of entry points %d\n", va_entrypoints_num);
 
     va_entrypoints = calloc(va_entrypoints_num, sizeof(VAEntrypoint));
     if(!va_entrypoints) {
@@ -194,16 +224,11 @@ int main(int argc, char **argv) {
       return -6;
     }
 
-    va_status = vaQueryConfigEntrypoints(dpy, va_profiles[i], va_entrypoints,
+    VA_CALL(vaQueryConfigEntrypoints, dpy, va_profiles[i], va_entrypoints,
       &va_entrypoints_num);
-    if (va_status != VA_STATUS_SUCCESS) {
-      printf("vaMaxNumEntrypoints failed\n");
-                        return -6;  
-    }
     
     for (j = 0; j < va_entrypoints_num; j++)
-      printEntrypoint(va_entrypoints[j]);
-        
+        printEntrypoint(va_entrypoints[j]);       
   }
 
 /////////////////////SETUP for big_buck_bunny mpeg2@main Profile////////////////
@@ -221,9 +246,73 @@ int main(int argc, char **argv) {
     printf("VAConfigAttribRTFormat does not support YUV420\n");
     return -8;
   }
+
+
+
+  //We need a config to create a context (pipeline)
+  VAConfigID config_id;
+  VA_CALL(vaCreateConfig, dpy, VAProfileMPEG2Main, VAEntrypointVLD, 
+   &va_attrib, 1, &config_id);
   
-  
-  
+  /* This fails as our friend Florent did not implement this function
+   * in the cedrus vaapi backend :(
+   * Assume it is NV12 as output format :(
+  // We also need a surface in order to create a context
+  unsigned int nr_surface_attribs = 10;
+  VASurfaceAttrib *surface_attribs;
+  VA_CALL(vaQuerySurfaceAttributes, dpy, config_id, surface_attribs,
+      &nr_surface_attribs);
+
+  printf("Supported surface attributes for selected profile/entry:\n");
+  for (i = 0; i < nr_surface_attribs; i++) {
+    printf("\tsurface_attribs %d\n", i);
+  } 
+  */
+  VASurfaceID *surfaces;
+  unsigned int num_surfaces = 1; //Maybe 2 for double buffer?
+  VA_CALL(vaCreateSurfaces, dpy, VA_RT_FORMAT_YUV420, 800, 600, 
+    surfaces, num_surfaces, NULL, 0);
+
+  VAContextID context_id;
+  /* A context is needed in order to use vaCreateBuffer.
+   * Create a context = vaCreateContext
+   * !!! Nee, vaCreateImage maakt ook een buffer aan zonder een context
+   * nodig te hebben :).
+   */
+
+   VA_CALL(vaCreateContext, dpy, config_id, 800, 600, VA_PROGRESSIVE,
+     surfaces, num_surfaces, &context_id);
+
+
+//   uint32_t va_img_fmt_num = vaMaxNumImageFormats(dpy);
+//   VAImageFormat *va_img_fmts;
+//   VA_CALL(vaQueryImageFormats, dpy, va_img_fmts, &va_img_fmt_num);   
+//   for(i = 0; i < va_img_fmt_num; i++)
+//     printVaImgFmt(va_img_fmts[i]);
+
+   /* vaCreateImage
+    * Create a VAImage structure The width and height fields returned in the 
+    * VAImage structure may get enlarged for some YUV formats. 
+    * Upon return from this function, image->buf has been created and proper 
+    * storage allocated by the library. The client can access the image 
+    * through the Map/Unmap calls. 
+    */
+  //YUV420
+//  VAImageFormat img_fmt = {
+//   .fourcc = VA_FOURCC_NV12,
+//   };
+//  VAImage *img;
+//  VA_CALL(vaCreateImage, dpy, &img_fmt, 800, 600, img);
+//  getchar();  
+
+
+  VA_CALL(vaDestroyConfig, dpy, config_id);
+//  VA_CALL(vaTerminate, dpy); Does not work :((((
+// object_heap_destroy: Assertion `obj->next_free != -2' failed.
   return 0;
+  
+error:
+  return -1;  
+  
 }
 
