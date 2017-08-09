@@ -25,7 +25,7 @@
   } while (0)
 
 int printDpyInfo(VADisplay dpy);
-int getFrameData(uint8_t **data, uint32_t *data_size);
+int getNextBufferFromFile(uint8_t **data, uint32_t *data_size, int fd);
 int decodeMpeg2Frames(VADisplay dpy, VAContextID va_context, VASurfaceID *surfaces);
 int decodeMpeg2(VADisplay dpy, uint32_t width, uint32_t height);
 void printVaImgFmt(VAImageFormat fmt);
@@ -268,12 +268,20 @@ int decodeMpeg2Frames(VADisplay dpy, VAContextID va_context, VASurfaceID *surfac
   uint8_t *data;
   uint32_t data_size;
   uint32_t buf_cnt;
+  int fd_input;
 
   VABufferID buffers[NUM_IMAGE_BUFFERS];
   buf_cnt = 0;
 
+  /* Open file containing frames */
+  fd_input = open("/dev/urandom", O_RDONLY);
+  if (fd_input == -1) {
+    printf("Failed opening frames file\n");
+    return -1;
+  }
+
   /* Get a decoded frame to be decoded */
-  if (getFrameData(&data, &data_size) < 0) {
+  if (getNextBufferFromFile(&data, &data_size, fd_input) < 0) {
     printf("getFrameData failed\n");
     goto error;
   }
@@ -281,28 +289,20 @@ int decodeMpeg2Frames(VADisplay dpy, VAContextID va_context, VASurfaceID *surfac
   printf("data %p with len %d\n", &data, data_size);
   data[1] = 0xff;
 
-
-  printf("1\n");
   VA_CALL(vaCreateBuffer, dpy, va_context, VAImageBufferType,
     data_size, ONE_PLANES, data, &buffers[buf_cnt++]);
-  printf("2\n");
   VA_CALL(vaCreateBuffer, dpy, va_context, VAPictureParameterBufferType,
     data_size, ONE_PLANES, data, &buffers[buf_cnt++]);
-  printf("3\n");
   VA_CALL(vaCreateBuffer, dpy, va_context, VASliceParameterBufferType,
     data_size, ONE_PLANES, data, &buffers[buf_cnt++]);
-  printf("4\n");
   VA_CALL(vaCreateBuffer, dpy, va_context, VASliceDataBufferType,
     data_size, ONE_PLANES, data, &buffers[buf_cnt++]);
-  printf("5\n");
 
   vaBeginPicture(dpy, va_context, surfaces[0]);
-  printf("6\n");
   vaRenderPicture(dpy, va_context, buffers, buf_cnt);
-  printf("7\n");
   vaEndPicture(dpy, va_context);
-  printf("8\n");
 
+  close(fd_input);
   free(data);
 
   return 0;
@@ -310,33 +310,23 @@ error:
   if (data)
     free(data);
 
+  close(fd_input);
+
   return -1;
 }
 
-int getFrameData(uint8_t **data, uint32_t *data_size)
+int getNextBufferFromFile(uint8_t **data, uint32_t *data_size, int fd)
 {
-  int fd_frames;
-
-  printf("a\n");
-  /* Open file containing frames */
-  fd_frames = open("/dev/urandom", O_RDONLY);
-  if (fd_frames == -1) {
-    printf("Failed opening frames file\n");
-    return -1;
-  }
-
   //make this the size of the frame
   *data_size = 800*600/10;
 
   *data = malloc(*data_size);
   if (*data == NULL) {
     printf("failed allocating data buffer\n");
-    close(fd_frames);
     return -1;   
   }
 
-  read(fd_frames, *data, *data_size);
-  close(fd_frames);
+//  read(fd, *data, *data_size);
 
   return 0;
 }
