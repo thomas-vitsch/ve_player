@@ -14,6 +14,13 @@
 #define DUMP_FILE "vaapi_cedrus_buffer_output.bin"
 #define HIGHEST_BUFFER_ID 42
 
+//#define ENABLE_DEBUG_PRINT
+#ifdef ENABLE_DEBUG_PRINT
+#define dbgprintf(...) printf (__VA_ARGS__)
+#else
+#define dbgprintf(...) 
+#endif
+
 char *getBufferName(int buffer_type) {
 	switch (buffer_type) {
 	case 0:
@@ -107,7 +114,7 @@ int prepare_decoder(uint32_t width, uint32_t height) {
 	VA_CALL(vaCreateConfig, dpy, VAProfileMPEG2Main, VAEntrypointVLD,
 		&va_attrib, 1, &va_config);
 
-	num_surfaces = 2; //2 for double buffering?
+	num_surfaces = 3; //If 2 then we get green pixels all around :P 
 	surfaces = calloc(num_surfaces, sizeof(VASurfaceID));
 	if (!surfaces) {
 		printf("Failed allocating sufaces\n");
@@ -127,7 +134,7 @@ int prepare_decoder(uint32_t width, uint32_t height) {
 	va_image_format.byte_order = 0x140;
 	va_image_format.bits_per_pixel = 4;
 	va_image_format.depth = 0x30;
-	VA_CALL(vaCreateImage, dpy, &va_image_format, 854, 480, &va_image);
+	VA_CALL(vaCreateImage, dpy, &va_image_format, 864, 480, &va_image);
 
 	VAImageFormat va_image_format2;
 	va_image_format2.fourcc = VA_FOURCC_NV12;
@@ -137,7 +144,7 @@ int prepare_decoder(uint32_t width, uint32_t height) {
 	va_image_format2.red_mask = 0;
 	va_image_format2.green_mask = 0;
 	va_image_format2.blue_mask = 0;
-	VA_CALL(vaCreateImage, dpy, &va_image_format2, 854, 480, &va_image2);
+	VA_CALL(vaCreateImage, dpy, &va_image_format2, 864, 480, &va_image2);
 
 	return 0;
 
@@ -226,24 +233,28 @@ int read_next_buffer(int fd, uint32_t **buf, uint32_t *buf_size, uint32_t *buf_t
 		return -1;
 	}
 
-	printf("Succesfull read on read_next_buffer\n");
-	printf("buf = %p\n", *buf);
+	dbgprintf("Succesfull read on read_next_buffer\n");
+	dbgprintf("buf = %p\n", *buf);
 
 	return 0;
 }
 
 int read_video_dump(char const *file) {
 	int fd;
-	uint32_t *buf_a, *buf_b;
-	uint32_t buf_a_size, buf_b_size;
-	uint32_t buf_a_type, buf_b_type;
- 	uint32_t buf_a_num_elem, buf_b_num_elem;
+	uint32_t *buf_a, *buf_b, *buf_c, *buf_d;
+	uint32_t buf_a_size, buf_b_size, buf_c_size, buf_d_size;
+	uint32_t buf_a_type, buf_b_type, buf_c_type, buf_d_type;
+ 	uint32_t buf_a_num_elem, buf_b_num_elem, buf_c_num_elem, buf_d_num_elem;
 
 	uint32_t buf_cnt[HIGHEST_BUFFER_ID] = {0};
 	uint32_t i;
 
+	uint32_t target_surface = 0;
+
 	buf_a = NULL;
 	buf_b = NULL;
+	buf_c = NULL;
+	buf_d = NULL;
 
 	printf("Started read_dump\n");
 
@@ -259,75 +270,70 @@ int read_video_dump(char const *file) {
 	/* We expect the buffers to be in a specific order. If one of the buffer read
 	 * is not what we expected we will skip buffers until it is what we expected. */
 	while (1) {
-//		sleep(0.01);
 		read_next_buffer(fd, &buf_a, &buf_a_size, &buf_a_type, &buf_a_num_elem);	
 		if (buf_a_type != VAPictureParameterBufferType) {
 			printf("Aborting: Expected buffer type %d, got %d\n", 
 				VAPictureParameterBufferType, buf_a_type);
 			break;
-		} else { printf("Got VAPictureParameterBufferType \n"); }
+		} else { dbgprintf("Got VAPictureParameterBufferType \n"); }
 
-//		sleep(0.01);
 		read_next_buffer(fd, &buf_b, &buf_b_size, &buf_b_type, &buf_b_num_elem);	
 		if (buf_b_type != VAIQMatrixBufferType) {
 			printf("Aborting: Expected buffer type %d, got %d\n", 
 				VAIQMatrixBufferType, buf_b_type);
 			break;
-		} else { printf("Got VAIQMatrixBufferType \n"); }
+		} else { dbgprintf("Got VAIQMatrixBufferType \n"); }
 
-		vaBeginPicture(dpy, va_context, surfaces[0]);
-//		sleep(0.01);
+		read_next_buffer(fd, &buf_c, &buf_c_size, &buf_c_type, &buf_c_num_elem);	
+		if (buf_c_type != VASliceParameterBufferType) {
+			printf("Aborting: Expected buffer type %d, got %d\n", 
+				VASliceParameterBufferType, buf_c_type);
+			break;
+		} else { dbgprintf("Got VASliceParameterBufferType \n"); }
+
+		read_next_buffer(fd, &buf_d, &buf_d_size, &buf_d_type, &buf_d_num_elem);	
+		if (buf_d_type != VASliceDataBufferType) {
+			printf("Aborting: Expected buffer type %d, got %d\n", 
+				VASliceDataBufferType, buf_d_type);
+			break;
+		} else { dbgprintf("Got VASliceDataBufferType \n"); }
+
+		vaBeginPicture(dpy, va_context, surfaces[target_surface]);
 
 		// Decode frame in cedrus driver
 		decode_frame(buf_a_type, buf_a_size, buf_a, buf_a_num_elem,
 			buf_b_type, buf_b_size, buf_b, buf_b_num_elem);
-		printf("buf_a = %p, buf_b = %p\n", buf_a, buf_b);
-
-//		sleep(0.01);
-
-		free(buf_a);
-		free(buf_b);
-
-		//Counts all occurances of each buffer.
-		buf_cnt[buf_a_type]++;
-		buf_cnt[buf_b_type]++;
-
-//		sleep(0.01);
-		read_next_buffer(fd, &buf_a, &buf_a_size, &buf_a_type, &buf_a_num_elem);	
-		if (buf_a_type != VASliceParameterBufferType) {
-			printf("Aborting: Expected buffer type %d, got %d\n", 
-				VASliceParameterBufferType, buf_a_type);
-			break;
-		} else { printf("Got VASliceParameterBufferType \n"); }
-
-//		sleep(0.01);
-		read_next_buffer(fd, &buf_b, &buf_b_size, &buf_b_type, &buf_b_num_elem);	
-		if (buf_b_type != VASliceDataBufferType) {
-			printf("Aborting: Expected buffer type %d, got %d\n", 
-				VASliceDataBufferType, buf_b_type);
-			break;
-		} else { printf("Got VASliceDataBufferType \n"); }
+		dbgprintf("buf_a = %p, buf_b = %p\n", buf_a, buf_b);
 
 		//Decode frame in cedrus driver
-		decode_frame(buf_a_type, buf_a_size, buf_a, buf_a_num_elem,
-			buf_b_type, buf_b_size, buf_b, buf_b_num_elem);
+		decode_frame(buf_c_type, buf_c_size, buf_c, buf_c_num_elem,
+			buf_d_type, buf_d_size, buf_d, buf_d_num_elem);
 
 		vaEndPicture(dpy, va_context);
-		printf("buf_a = %p, buf_b = %p\n", buf_a, buf_b);
 
-		printf("press enter for next frame\n");
-		getchar();
-//		sleep(0.01);
+		if (target_surface == (num_surfaces -1))
+			target_surface = 0;
+		else
+			target_surface++;
+
+		dbgprintf("buf_c = %p, buf_d = %p\n", buf_c, buf_d);
+
+		dbgprintf("press enter for next frame\n");
+		// getchar();
 
 		free(buf_a);
 		free(buf_b);
+		free(buf_c);
+		free(buf_d);
 
 		//Counts all occurances of each buffer.
 		buf_cnt[buf_a_type]++;
 		buf_cnt[buf_b_type]++;
+		buf_cnt[buf_c_type]++;
+		buf_cnt[buf_d_type]++;
 
 		//debug sleep
-		printf("We should have 1 decoded frame by now\n");
+		dbgprintf("We should have 1 decoded frame by now\n");
 	}
 
 	clean_up_decoder();
