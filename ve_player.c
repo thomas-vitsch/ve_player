@@ -183,6 +183,8 @@ int main(int argc, char const **argv)
     goto error;
   }
 
+
+
   //Get a va drm display
   dpy = vaGetDisplayDRM(fd_drm);
   if (!dpy) {
@@ -193,14 +195,15 @@ int main(int argc, char const **argv)
   printf("vaGetDisplayDRM = %p\n", dpy);
 
   VA_CALL(vaInitialize, dpy, &major_version, &minor_version);
-
+  VA_CALL(vaTerminate, dpy);
   printDpyInfo(dpy);
 
-  if(decodeMpeg2(dpy, 864, 480) < 0) {
-    printf("decodeMpeg2 failed\n");
-    goto error;
-  }
+  // if(decodeMpeg2(dpy, 864, 480) < 0) {
+  //   printf("decodeMpeg2 failed\n");
+  //   goto error;
+  // }
 
+  close(fd_drm);
   return 0;
 
 error:
@@ -218,6 +221,7 @@ int decodeMpeg2(VADisplay dpy, uint32_t width, uint32_t height)
   VAConfigAttrib va_attrib;
   VASurfaceID *surfaces;
   uint32_t num_surfaces;
+
 
   va_attrib.type = VAConfigAttribRTFormat;
 
