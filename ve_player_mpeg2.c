@@ -222,8 +222,8 @@ int read_next_buffer(int fd, uint32_t **buf, uint32_t *buf_size, uint32_t *buf_t
 			return -1;
 		}
 
-		//Read actual buffer block
 		res = read(fd, *buf, *buf_size);
+		// ^ Read actual buffer block
 		if (res < 1) {
 			printf("Expected more data for buffer bit didn't get it, EOF?\n");
 			return -1;
@@ -318,8 +318,22 @@ int read_video_dump(char const *file) {
 
 		dbgprintf("buf_c = %p, buf_d = %p\n", buf_c, buf_d);
 
-		dbgprintf("press enter for next frame\n");
-		// getchar();
+//		printf("press enter for next frame\n");
+//		getchar();
+		usleep(500000); //25 fps
+//		usleep(40000); //25 fps
+//		usleep(16700); //60 fps
+//		usleep(8333); //120 fps
+//		usleep(4167); //240 fps
+//		usleep(2084); //480 fps
+//		usleep(1500); //480 fps Uiterste limiet van de mixer processor 480*648
+
+//		usleep(1042); //960 fps Dit haalt de mixer processor niet meer
+
+		//Wait until all pending ops have finished for this surface
+		//Inside this function detiling should be handled.
+		vaSyncSurface(dpy, surfaces[target_surface]);
+
 
 		free(buf_a);
 		free(buf_b);
