@@ -13,4 +13,7 @@ ve_player:
 ve_player_v2:
 	gcc ve_player_mpeg2.c -o ve_player_v2 -lva-drm -lva -Wall	
 
-.PHONY: read_dump ve_player ve_player_v2
+unroll:
+	gcc  detile_unroll_test.c -o unroll -Wall -fverbose-asm
+
+.PHONY: read_dump ve_player ve_player_v2 unroll
