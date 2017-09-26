@@ -320,7 +320,7 @@ int read_video_dump(char const *file) {
 
 //		printf("press enter for next frame\n");
 //		getchar();
-		usleep(500000); //25 fps
+//		usleep(500000); //25 fps
 //		usleep(40000); //25 fps
 //		usleep(16700); //60 fps
 //		usleep(8333); //120 fps
@@ -329,6 +329,7 @@ int read_video_dump(char const *file) {
 //		usleep(1500); //480 fps Uiterste limiet van de mixer processor 480*648
 
 //		usleep(1042); //960 fps Dit haalt de mixer processor niet meer
+//		usleep(1000000);
 
 		//Wait until all pending ops have finished for this surface
 		//Inside this function detiling should be handled.

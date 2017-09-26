@@ -16,4 +16,7 @@ ve_player_v2:
 unroll:
 	gcc  detile_unroll_test.c -o unroll -Wall -fverbose-asm
 
+fe_ioctl_test:
+	gcc fe_ioctl_test.c -o fe_ioctl_test.c -Wall -Werror
+
 .PHONY: read_dump ve_player ve_player_v2 unroll
