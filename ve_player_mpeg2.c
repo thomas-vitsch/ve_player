@@ -322,6 +322,7 @@ int read_video_dump(char const *file) {
 //		getchar();
 //		usleep(500000); //25 fps
 //		usleep(40000); //25 fps
+		usleep(20000); //50fps
 //		usleep(16700); //60 fps
 //		usleep(8333); //120 fps
 //		usleep(4167); //240 fps
