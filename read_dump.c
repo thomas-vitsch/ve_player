@@ -56,6 +56,7 @@ int main(int argc, char const **argv)
   }
 
   while (1) {
+  	ret = read(fd, &buffer_type, 4); //Skip surf_id
   	ret = read(fd, &buffer_type, 4);
   	if (ret < 1)
   	  break;
